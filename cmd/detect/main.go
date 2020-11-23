@@ -3,13 +3,13 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"strings"
-	"github.com/vaikas/buildpackstuff/pkg/detect"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
-	"golang.org/x/tools/go/packages"
+	"strings"
+
+	"github.com/vaikas/buildpackstuff/pkg/detect"
 )
 
 const supportedFuncs = `
@@ -46,7 +46,7 @@ name = "ce-go-function"
 [requires.metadata]
 package = "PACKAGE"
 function = "CE_GO_FUNCTION"
-protocol = "CE_GO_PROTOCOL"
+protocol = "CE_PROTOCOL"
 `
 
 func printSupportedFunctionsAndExit() {
@@ -61,7 +61,7 @@ func main() {
 	}
 
 	if len(os.Args) < 3 {
-		log.Println("Usage: %s <PLATFORM_DIR> <BUILD_PLAN>", os.Args[0])
+		log.Printf("Usage: %s <PLATFORM_DIR> <BUILD_PLAN>\n", os.Args[0])
 		os.Exit(100)
 	}
 
@@ -89,23 +89,15 @@ func main() {
 	log.Println("Using relative path to look for function: ", goPackage)
 
 	goFunction := os.Getenv("CE_GO_FUNCTION")
-	goProtocol := os.Getenv("CE_GO_PROTOCOL")
+	goProtocol := os.Getenv("CE_PROTOCOL")
 	if goProtocol == "" {
 		goProtocol = "http"
 	}
 
-	pack, err := packages.Load(&packages.Config{Mode:packages.NeedName}, "github.com/vaikas/testfunc")
-	if err != nil {
-		log.Println("Failed to load package: ", err)
-		os.Exit(100)
-	}
-	for _, p := range pack {
-		log.Printf("GOT PACKAGE: %+v\n", p)
-	}
 	planFileName := os.Args[2]
 	log.Println("using plan file: ", planFileName)
 
-	// read all go files from the directory that was given. Note that if no directory (CE_GO_PACKAGE)
+	// read all go files from the directory that was given. Note that if no directory (CE_PACKAGE)
 	// was given, this is ./
 	files, err := filepath.Glob(fmt.Sprintf("%s*.go", goPackage))
 	if err != nil {
@@ -146,7 +138,7 @@ func main() {
 	printSupportedFunctionsAndExit()
 }
 
-// lan writes the planFileName with the following format:
+// writePlan writes the planFileName with the following format:
 //[[provides]]
 //name = "ce-go-function"
 //[[requires]]
@@ -164,9 +156,9 @@ func writePlan(planFileName, protocol string, details *detect.FunctionDetails) e
 	defer planFile.Close()
 
 	// Replace the placeholders with valid values
-	replacedPlan := strings.Replace(string(planFileFormat), "PACKAGE", details.Package,1 )
+	replacedPlan := strings.Replace(string(planFileFormat), "PACKAGE", details.Package, 1)
 	replacedPlan = strings.Replace(replacedPlan, "CE_GO_FUNCTION", details.Name, 1)
-	replacedPlan = strings.Replace(replacedPlan, "CE_GO_PROTOCOL", protocol, 1)
+	replacedPlan = strings.Replace(replacedPlan, "CE_PROTOCOL", protocol, 1)
 	if _, err := planFile.WriteString(replacedPlan); err != nil {
 		printSupportedFunctionsAndExit()
 	}
@@ -177,13 +169,17 @@ func writePlan(planFileName, protocol string, details *detect.FunctionDetails) e
 // Should be replaced with something that actually understands go...
 func readModuleName() (string, error) {
 	modFile, err := os.Open("./go.mod")
-	if err != nil { return "", err}
+	if err != nil {
+		return "", err
+	}
 	defer modFile.Close()
 	scanner := bufio.NewScanner(modFile)
 	for scanner.Scan() {
 		pieces := strings.Split(scanner.Text(), " ")
-		fmt.Printf("FOund pieces as %+v\n", pieces)
-		if len(pieces) >= 2 && pieces[0] == "module" {return pieces[1], nil}
+		fmt.Printf("Found pieces as %+v\n", pieces)
+		if len(pieces) >= 2 && pieces[0] == "module" {
+			return pieces[1], nil
+		}
 	}
 	return "", nil
 }
