@@ -80,7 +80,7 @@ type imports struct {
 }
 
 type FunctionDetails struct {
-	Name string
+	Name      string
 	Package   string
 	Signature string
 }

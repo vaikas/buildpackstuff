@@ -6,24 +6,24 @@ func TestAllCases(t *testing.T) {
 
 	tests := map[string]*FunctionDetails{
 		"./testdata/f1.go": &FunctionDetails{
-			Name: "Receive",
+			Name:      "Receive",
 			Signature: "func(event.Event)",
 		},
 		"./testdata/f2.go": &FunctionDetails{
-			Name: "Receive2",
+			Name:      "Receive2",
 			Signature: "func(context.Context, event.Event) (*event.Event, protocol.Result)",
 		},
 		"./testdata/f3.go": &FunctionDetails{
-			Name: "Receive3",
+			Name:      "Receive3",
 			Signature: "func(context.Context, event.Event) (*event.Event, protocol.Result)",
 		},
 		"./testdata/f4-bad.go": nil,
 		"./testdata/f5.go": &FunctionDetails{
-			Name:   "Receive4",
+			Name:      "Receive4",
 			Signature: "func(context.Context, event.Event) (*event.Event, error)",
 		},
 		"./testdata/f6.go": &FunctionDetails{
-			Name:   "Receive5",
+			Name:      "Receive5",
 			Signature: "func(event.Event) (*event.Event, error)",
 		},
 	}

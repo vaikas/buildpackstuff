@@ -3,13 +3,13 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"strings"
 	"github.com/vaikas/buildpackstuff/pkg/detect"
+	"golang.org/x/tools/go/packages"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
-	"golang.org/x/tools/go/packages"
+	"strings"
 )
 
 const supportedFuncs = `
@@ -94,7 +94,7 @@ func main() {
 		goProtocol = "http"
 	}
 
-	pack, err := packages.Load(&packages.Config{Mode:packages.NeedName}, "github.com/vaikas/testfunc")
+	pack, err := packages.Load(&packages.Config{Mode: packages.NeedName}, "github.com/vaikas/testfunc")
 	if err != nil {
 		log.Println("Failed to load package: ", err)
 		os.Exit(100)
@@ -164,7 +164,7 @@ func writePlan(planFileName, protocol string, details *detect.FunctionDetails) e
 	defer planFile.Close()
 
 	// Replace the placeholders with valid values
-	replacedPlan := strings.Replace(string(planFileFormat), "PACKAGE", details.Package,1 )
+	replacedPlan := strings.Replace(string(planFileFormat), "PACKAGE", details.Package, 1)
 	replacedPlan = strings.Replace(replacedPlan, "CE_GO_FUNCTION", details.Name, 1)
 	replacedPlan = strings.Replace(replacedPlan, "CE_GO_PROTOCOL", protocol, 1)
 	if _, err := planFile.WriteString(replacedPlan); err != nil {
@@ -177,13 +177,17 @@ func writePlan(planFileName, protocol string, details *detect.FunctionDetails) e
 // Should be replaced with something that actually understands go...
 func readModuleName() (string, error) {
 	modFile, err := os.Open("./go.mod")
-	if err != nil { return "", err}
+	if err != nil {
+		return "", err
+	}
 	defer modFile.Close()
 	scanner := bufio.NewScanner(modFile)
 	for scanner.Scan() {
 		pieces := strings.Split(scanner.Text(), " ")
 		fmt.Printf("FOund pieces as %+v\n", pieces)
-		if len(pieces) >= 2 && pieces[0] == "module" {return pieces[1], nil}
+		if len(pieces) >= 2 && pieces[0] == "module" {
+			return pieces[1], nil
+		}
 	}
 	return "", nil
 }
