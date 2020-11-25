@@ -9,7 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/vaikas/buildpackstuff/pkg/detect"
+	"github.com/kelseyhightower/envconfig"
+	"github.com/vaikas/gofunctypechecker/pkg/detect"
 )
 
 const supportedFuncs = `
@@ -49,6 +50,50 @@ function = "CE_GO_FUNCTION"
 protocol = "CE_PROTOCOL"
 `
 
+// import paths for supported functions
+const (
+	ceImport         = "github.com/cloudevents/sdk-go/v2"
+	ceProtocolImport = "github.com/cloudevents/sdk-go/v2/protocol"
+	contextImport    = "context"
+)
+
+type EnvConfig struct {
+	CEGoPackage  string `envconfig:"CE_GO_PACKAGE" default:"./"`
+	CEGoFunction string `envconfig:"CE_GO_FUNCTION" default:"Receiver"`
+	CEProtocol   string `envconfig:"CE_PROTOCOL" default:"http"`
+}
+
+// Define the valid functions like so:
+/*
+	"func(event.Event)"
+	"func(event.Event) protocol.Result"
+	"func(event.Event) error"
+	"func(context.Context, event.Event)"
+	"func(context.Context, event.Event) protocol.Result"
+	"func(context.Context, event.Event) error"
+	"func(event.Event) *event.Event"
+	"func(event.Event) (*event.Event, protocol.Result)"
+	"func(event.Event) (*event.Event, error)"
+	"func(context.Context, event.Event) *event.Event":                    functionSignature{in: []paramType{contextType, eventType}, out: []paramType{ptrEventType}},
+	"func(context.Context, event.Event) (*event.Event, protocol.Result)": functionSignature{in: []paramType{contextType, eventType}, out: []paramType{ptrEventType, protocolResultType}},
+	"func(context.Context, event.Event) (*event.Event, error)":           functionSignature{in: []paramType{contextType, eventType}, out: []paramType{ptrEventType, errorType}},
+*/
+
+var validFunctions = []detect.FunctionSignature{
+	{In: []detect.FunctionArg{{ImportPath: ceImport, Name: "Event"}}},
+	{In: []detect.FunctionArg{{ImportPath: ceImport, Name: "Event"}}, Out: []detect.FunctionArg{{ImportPath: ceProtocolImport, Name: "Result"}}},
+	{In: []detect.FunctionArg{{ImportPath: ceImport, Name: "Event"}}, Out: []detect.FunctionArg{{Name: "error"}}},
+	{In: []detect.FunctionArg{{ImportPath: contextImport, Name: "Context"}, {ImportPath: ceImport, Name: "Event"}}},
+	{In: []detect.FunctionArg{{ImportPath: contextImport, Name: "Context"}, {ImportPath: ceImport, Name: "Event"}}, Out: []detect.FunctionArg{{ImportPath: ceProtocolImport, Name: "Result"}}},
+	{In: []detect.FunctionArg{{ImportPath: contextImport, Name: "Context"}, {ImportPath: ceImport, Name: "Event"}}, Out: []detect.FunctionArg{{Name: "error"}}},
+	{In: []detect.FunctionArg{{ImportPath: ceImport, Name: "Event"}}, Out: []detect.FunctionArg{{ImportPath: ceImport, Name: "Event", Pointer: true}}},
+	{In: []detect.FunctionArg{{ImportPath: ceImport, Name: "Event"}}, Out: []detect.FunctionArg{{ImportPath: ceImport, Name: "Event", Pointer: true}, {ImportPath: ceProtocolImport, Name: "Result"}}},
+	{In: []detect.FunctionArg{{ImportPath: ceImport, Name: "Event"}}, Out: []detect.FunctionArg{{ImportPath: ceImport, Name: "Event", Pointer: true}, {Name: "error"}}},
+	{In: []detect.FunctionArg{{ImportPath: contextImport, Name: "Context"}, {ImportPath: ceImport, Name: "Event"}}, Out: []detect.FunctionArg{{ImportPath: ceImport, Name: "Event", Pointer: true}}},
+	{In: []detect.FunctionArg{{ImportPath: contextImport, Name: "Context"}, {ImportPath: ceImport, Name: "Event"}}, Out: []detect.FunctionArg{{ImportPath: ceImport, Name: "Event", Pointer: true}, {ImportPath: ceProtocolImport, Name: "Result"}}},
+	{In: []detect.FunctionArg{{ImportPath: contextImport, Name: "Context"}, {ImportPath: ceImport, Name: "Event"}}, Out: []detect.FunctionArg{{ImportPath: ceImport, Name: "Event", Pointer: true}, {Name: "error"}}},
+}
+
 func printSupportedFunctionsAndExit() {
 	fmt.Println(supportedFuncs)
 	os.Exit(100)
@@ -65,6 +110,12 @@ func main() {
 		os.Exit(100)
 	}
 
+	// Grab the env variables
+	var envConfig EnvConfig
+	if err := envconfig.Process("http", &envConfig); err != nil {
+		log.Printf("Failed to process env variables: %s\n", err)
+	}
+
 	moduleName, err := readModuleName()
 	if err != nil {
 		log.Println("Failed to read go.mod file: ", err)
@@ -74,11 +125,7 @@ func main() {
 	// There are two ENV variables that control what should be checked.
 	// We yank the base package from go.mod and append CE_GO_PACKAGE into it
 	// if it's given.
-	// TODO: Use library for these...
-	goPackage := os.Getenv("CE_GO_PACKAGE")
-	if goPackage == "" {
-		goPackage = "./"
-	}
+	goPackage := envConfig.CEGoPackage
 	if !strings.HasSuffix(goPackage, "/") {
 		goPackage = goPackage + "/"
 	}
@@ -88,11 +135,8 @@ func main() {
 	}
 	log.Println("Using relative path to look for function: ", goPackage)
 
-	goFunction := os.Getenv("CE_GO_FUNCTION")
-	goProtocol := os.Getenv("CE_PROTOCOL")
-	if goProtocol == "" {
-		goProtocol = "http"
-	}
+	goFunction := envConfig.CEGoFunction
+	goProtocol := envConfig.CEProtocol
 
 	planFileName := os.Args[2]
 	log.Println("using plan file: ", planFileName)
@@ -105,24 +149,23 @@ func main() {
 		printSupportedFunctionsAndExit()
 	}
 
+	detector := detect.NewDetector(validFunctions)
+
 	for _, f := range files {
 		log.Printf("Processing file %s\n", f)
-		// read file
-		file, err := os.Open(f)
-		if err != nil {
-			log.Println(err)
-			printSupportedFunctionsAndExit()
-		}
-		defer file.Close()
-
 		// read the whole file in
-		srcbuf, err := ioutil.ReadAll(file)
+		srcbuf, err := ioutil.ReadFile(f)
 		if err != nil {
 			log.Println(err)
 			printSupportedFunctionsAndExit()
 		}
 		f := &detect.Function{File: f, Source: string(srcbuf)}
-		if deets := detect.CheckFile(f); deets != nil {
+		deets, err := detector.CheckFile(f)
+		if err != nil {
+			log.Printf("Failed to check file: %q : %s\n", f, err)
+			os.Exit(100)
+		}
+		if deets != nil {
 			log.Printf("Found supported function %q in package %q signature %q", deets.Name, deets.Package, deets.Signature)
 			// If the user didn't specify a specific function, use it. If they specified the function, make sure it
 			// matches what we found.
